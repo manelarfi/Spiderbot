@@ -49,4 +49,3 @@ def set_to_file(links, files):
     delete_file_contents(files)
     for link in sorted(links):
         append_to_file(files, link)
-

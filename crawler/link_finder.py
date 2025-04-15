@@ -1,4 +1,5 @@
 from html.parser import HTMLParser
+from urllib import parse
 from urllib.parse import urljoin
 
 class LinkFinder(HTMLParser):
@@ -13,6 +14,7 @@ class LinkFinder(HTMLParser):
         if tag == 'a':
             for (attr, value) in attrs:
                 if attr == 'href':
+                    print('reached the page')
                     url = parse.urljoin(self.base_url, value)
                     self.links.add(url)
                     # if the link is a relative url it will get combined with the base, else it will keep the original url
