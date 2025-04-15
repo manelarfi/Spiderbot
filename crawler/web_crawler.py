@@ -5,6 +5,10 @@ import time
 import threading
 from robot_parser import is_allowed  # Import the is_allowed function
 
+db_path = os.path.join(os.path.dirname(__file__), "crawler.db")
+conn = sqlite3.connect(db_path)
+
+
 def crawl(url, visited=None, max_depth=2, depth=0):
     if visited is None:
         visited = set()
