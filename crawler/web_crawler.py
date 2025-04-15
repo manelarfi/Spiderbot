@@ -1,3 +1,5 @@
+import os
+import sqlite3
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
@@ -8,6 +10,33 @@ from robot_parser import is_allowed  # Import the is_allowed function
 db_path = os.path.join(os.path.dirname(__file__), "crawler.db")
 conn = sqlite3.connect(db_path)
 
+
+
+def init_db():
+    conn = sqlite3.connect(db_path)
+    c = conn.cursor()
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS visited_urls (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            url TEXT UNIQUE,
+            depth INTEGER,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.commit()
+    conn.close()
+    print("✅ Base de données 'crawler.db' créée avec succès.")
+ 
+def save_url_to_db(url, depth):
+    conn = sqlite3.connect(db_path)
+    c = conn.cursor()
+    try:
+        c.execute("INSERT OR IGNORE INTO visited_urls (url, depth) VALUES (?, ?)", (url, depth))
+        conn.commit()
+    except sqlite3.Error as e:
+        print(f"[!] Erreur DB : {e}")
+    finally:
+        conn.close()
 
 def crawl(url, visited=None, max_depth=2, depth=0):
     if visited is None:
@@ -52,6 +81,8 @@ def crawl(url, visited=None, max_depth=2, depth=0):
         print(f"[!] Error with {url}: {e}")
     except Exception as e:
         print(f"[!] Unexpected error: {e}")
+
+init_db()
 
 if __name__ == "__main__":
     start_url = input("Enter the URL to start crawling from (format should be : https://example.com): ")
