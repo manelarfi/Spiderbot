@@ -81,6 +81,9 @@ def crawl(url, visited=None, max_depth=2, depth=0):
         print(f"[!] Error with {url}: {e}")
     except Exception as e:
         print(f"[!] Unexpected error: {e}")
+    
+
+
 
 init_db()
 
