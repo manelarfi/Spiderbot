@@ -2,19 +2,15 @@ import os
 import sqlite3
 import time
 import threading
-from urllib.parse import urljoin, urlparse
-from bs4 import BeautifulSoup
-from robot_parser import is_allowed
-from broken_links import est_broken
-
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
-from selenium.common.exceptions import WebDriverException
+from urllib.parse import urljoin, urlparse
+from robot_parser import is_allowed  # Import the is_allowed function
 
-# Setup path to DB
 db_path = os.path.join(os.path.dirname(__file__), "crawler.db")
+conn = sqlite3.connect(db_path)
 
-# Initialize DB
+
 def init_db():
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
@@ -30,7 +26,7 @@ def init_db():
     conn.close()
     print("✅ Base de données 'crawler.db' créée avec succès.")
 
-# Save visited URL
+
 def save_url_to_db(url, depth):
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
@@ -42,29 +38,20 @@ def save_url_to_db(url, depth):
     finally:
         conn.close()
 
-# Get JavaScript-rendered HTML using Selenium
-def get_rendered_html(url):
-    try:
-        options = Options()
-        options.add_argument('--headless')
-        options.add_argument('--disable-gpu')
-        options.add_argument('--no-sandbox')
-        options.add_argument('--log-level=3')  # suppress warnings
-        options.add_argument('--disable-dev-shm-usage')
 
-        driver = webdriver.Chrome(options=options)
-        driver.set_page_load_timeout(10)
-        driver.get(url)
-        time.sleep(2)  # wait for JS to render
-        html = driver.page_source
-        driver.quit()
-        return html
-    except WebDriverException as e:
-        print(f"[!] Selenium error: {e}")
-        return None
+def get_driver():
+    # Set up Chrome for headless browsing
+    options = Options()
+    options.add_argument('--headless')  # No GUI
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage')
 
-# Recursive crawler
-def crawl(url, visited=None, max_depth=0, depth=0):
+    # Initialize the WebDriver
+    driver = webdriver.Chrome(options=options)
+    return driver
+
+
+def crawl(url, visited=None, max_depth=2, depth=0):
     if visited is None:
         visited = set()
 
@@ -74,36 +61,36 @@ def crawl(url, visited=None, max_depth=0, depth=0):
     visited.add(url)
     print(f"[*] Depth {depth} -> Crawling: {url}")
 
+    # Check if the website allows crawling based on robots.txt
     if not is_allowed(url):
         print(f"[!] Crawling not allowed by robots.txt: {url}")
         return
     else:
-        print("✅ Access granted by robots.txt.")
+        print("Access granted")
+
+    driver = get_driver()  # Initialize WebDriver for headless browsing
 
     try:
-        
-        html = get_rendered_html(url)
-        if not html:
-            print("RANI HNAAA")
-            return
+        driver.get(url)  # Get the page using Selenium
+        time.sleep(2)  # Let the JavaScript load
+        page_source = driver.page_source  # Get the fully rendered HTML
 
-        soup = BeautifulSoup(html, "html.parser")
-        
+        # If you want to parse the page with BeautifulSoup
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(page_source, 'html.parser')
+
         links = set()
         for link in soup.find_all("a", href=True):
             full_url = urljoin(url, link["href"])
             parsed_url = urlparse(full_url)
 
             if parsed_url.scheme in ["http", "https"] and parsed_url.netloc == urlparse(url).netloc:
-                if est_broken(full_url):
-                    print(f"    [✗] Broken link detected: {full_url}")
-                else:
-                    print(f"    [+] Valid link: {full_url}")
-                    links.add(full_url)
+                print(f"    [+] Found: {full_url}")
+                links.add(full_url)
 
-        save_url_to_db(url, depth)
-        time.sleep(0.5)
+        time.sleep(0.5)  # To avoid overwhelming the server
 
+        # Crawl through found links using threading
         threads = []
         for link in links:
             thread = threading.Thread(target=crawl, args=(link, visited, max_depth, depth + 1))
@@ -112,13 +99,16 @@ def crawl(url, visited=None, max_depth=0, depth=0):
 
         for thread in threads:
             thread.join()
-    except Exception as e:
-        print(f"[!] Unexpected error while crawling {url}: {e}")
 
-# Main
+    except Exception as e:
+        print(f"[!] Error with {url}: {e}")
+    finally:
+        driver.quit()  # Close the browser after scraping
+
+
 init_db()
 
 if __name__ == "__main__":
-    start_url = input("Enter the URL to start crawling from (format should be: https://example.com): ")
+    start_url = input("Enter the URL to start crawling from (e.g., https://quotes.toscrape.com/js/): ")
     crawl(start_url)
     print("Crawling completed.")
