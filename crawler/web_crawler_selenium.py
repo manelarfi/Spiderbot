@@ -1,18 +1,20 @@
 import os
 import sqlite3
-import requests
-from bs4 import BeautifulSoup
-from urllib.parse import urljoin, urlparse
 import time
 import threading
+from urllib.parse import urljoin, urlparse
+from bs4 import BeautifulSoup
+from robot_parser import is_allowed
 from broken_links import est_broken
-from robot_parser import is_allowed  # Import the is_allowed function
 
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.common.exceptions import WebDriverException
+
+# Setup path to DB
 db_path = os.path.join(os.path.dirname(__file__), "crawler.db")
-conn = sqlite3.connect(db_path)
 
-
-
+# Initialize DB
 def init_db():
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
@@ -27,7 +29,8 @@ def init_db():
     conn.commit()
     conn.close()
     print("✅ Base de données 'crawler.db' créée avec succès.")
- 
+
+# Save visited URL
 def save_url_to_db(url, depth):
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
@@ -39,6 +42,28 @@ def save_url_to_db(url, depth):
     finally:
         conn.close()
 
+# Get JavaScript-rendered HTML using Selenium
+def get_rendered_html(url):
+    try:
+        options = Options()
+        options.add_argument('--headless')
+        options.add_argument('--disable-gpu')
+        options.add_argument('--no-sandbox')
+        options.add_argument('--log-level=3')  # suppress warnings
+        options.add_argument('--disable-dev-shm-usage')
+
+        driver = webdriver.Chrome(options=options)
+        driver.set_page_load_timeout(10)
+        driver.get(url)
+        time.sleep(2)  # wait for JS to render
+        html = driver.page_source
+        driver.quit()
+        return html
+    except WebDriverException as e:
+        print(f"[!] Selenium error: {e}")
+        return None
+
+# Recursive crawler
 def crawl(url, visited=None, max_depth=0, depth=0):
     if visited is None:
         visited = set()
@@ -49,18 +74,21 @@ def crawl(url, visited=None, max_depth=0, depth=0):
     visited.add(url)
     print(f"[*] Depth {depth} -> Crawling: {url}")
 
-    # Check if the website allows crawling based on robots.txt
     if not is_allowed(url):
         print(f"[!] Crawling not allowed by robots.txt: {url}")
         return
     else:
-        print("acces granted hbb")
-    try:
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-        response = requests.get(url, timeout=5, headers=headers)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, "html.parser")
+        print("✅ Access granted by robots.txt.")
 
+    try:
+        
+        html = get_rendered_html(url)
+        if not html:
+            print("RANI HNAAA")
+            return
+
+        soup = BeautifulSoup(html, "html.parser")
+        
         links = set()
         for link in soup.find_all("a", href=True):
             full_url = urljoin(url, link["href"])
@@ -73,7 +101,9 @@ def crawl(url, visited=None, max_depth=0, depth=0):
                     print(f"    [+] Valid link: {full_url}")
                     links.add(full_url)
 
-        time.sleep(0.5)  # To avoid overwhelming the server
+        save_url_to_db(url, depth)
+        time.sleep(0.5)
+
         threads = []
         for link in links:
             thread = threading.Thread(target=crawl, args=(link, visited, max_depth, depth + 1))
@@ -82,17 +112,13 @@ def crawl(url, visited=None, max_depth=0, depth=0):
 
         for thread in threads:
             thread.join()
-    except requests.exceptions.RequestException as e:
-        print(f"[!] Error with {url}: {e}")
     except Exception as e:
-        print(f"[!] Unexpected error: {e}")
-    
+        print(f"[!] Unexpected error while crawling {url}: {e}")
 
-
-
+# Main
 init_db()
 
 if __name__ == "__main__":
-    start_url = input("Enter the URL to start crawling from (format should be : https://example.com): ")
+    start_url = input("Enter the URL to start crawling from (format should be: https://example.com): ")
     crawl(start_url)
     print("Crawling completed.")
